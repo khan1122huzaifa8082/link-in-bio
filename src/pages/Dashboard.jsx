@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
-import { UserButton, useUser, useAuth } from "@clerk/clerk-react"; // Added useAuth
-import { getSupabaseClient } from "../supabaseClient"; // Updated import
+import { UserButton, useUser } from "@clerk/clerk-react";
+import { supabase } from "../supabaseClient"; // Using the standard client
 import AiAssistant from "../AiAssistant";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 
 export default function Dashboard() {
   const { user } = useUser();
-  const { getToken } = useAuth(); // NEW: Hook to get the security badge
 
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -23,14 +22,11 @@ export default function Dashboard() {
   const [hasUnsavedLinks, setHasUnsavedLinks] = useState(false);
   const [isSavingLinks, setIsSavingLinks] = useState(false);
 
-  // 1. Fetch Data with Security Badge
+  // 1. Fetch Data
   useEffect(() => {
     if (!user) return;
 
     const fetchData = async () => {
-      const token = await getToken({ template: "supabase" });
-      const supabase = getSupabaseClient(token);
-
       const { data: profileData } = await supabase
         .from("profiles")
         .select("*")
@@ -56,15 +52,12 @@ export default function Dashboard() {
     };
 
     fetchData();
-  }, [user, getToken]);
+  }, [user]);
 
-  // 2. Save Profile with Security Badge
+  // 2. Save Profile
   const handleSaveProfile = async () => {
     if (!user) return;
     setIsSavingProfile(true);
-
-    const token = await getToken({ template: "supabase" });
-    const supabase = getSupabaseClient(token);
 
     const { error } = await supabase.from("profiles").upsert({
       id: user.id,
@@ -74,23 +67,25 @@ export default function Dashboard() {
       avatar_url: avatarUrl,
     });
 
-    if (error) alert("Security Error: Could not save profile.");
-    else alert("Profile Saved Securely! ✓");
+    if (error) {
+      console.error("Save Error:", error);
+      alert("Error saving profile. Check console.");
+    } else {
+      alert("Profile Saved! ✓");
+    }
     setIsSavingProfile(false);
   };
 
-  // 3. Image Upload with Security Badge
+  // 3. Image Upload (Fixed the 400 Error here)
   const handleImageUpload = async (event) => {
     const file = event.target.files[0];
     if (!file || !user) return;
     setIsUploading(true);
 
     try {
-      const token = await getToken({ template: "supabase" });
-      const supabase = getSupabaseClient(token);
-
       const fileExt = file.name.split(".").pop();
-      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+      // Using Date.now() guarantees no weird spaces or characters in the filename
+      const fileName = `avatar-${Date.now()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from("avatars")
@@ -101,13 +96,14 @@ export default function Dashboard() {
       const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
       setAvatarUrl(data.publicUrl);
     } catch (error) {
-      alert("Upload failed. Security policy blocked the request.");
+      console.error("Upload Error:", error);
+      alert("Upload failed. Check console for details.");
     } finally {
       setIsUploading(false);
     }
   };
 
-  // 4. Add Link with Security Badge
+  // 4. Add Link
   const handleAddLink = async () => {
     if (!user || !linkTitle || !linkUrl) return;
     setIsAddingLink(true);
@@ -116,9 +112,6 @@ export default function Dashboard() {
     if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
       finalUrl = "https://" + finalUrl;
     }
-
-    const token = await getToken({ template: "supabase" });
-    const supabase = getSupabaseClient(token);
 
     const { data, error } = await supabase
       .from("links")
@@ -137,16 +130,14 @@ export default function Dashboard() {
       setLinkTitle("");
       setLinkUrl("");
     } else {
-      alert("Failed to add link. Security check failed.");
+      console.error("Link Error:", error);
+      alert("Failed to add link.");
     }
     setIsAddingLink(false);
   };
 
-  // 5. Delete Link with Security Badge
+  // 5. Delete Link
   const handleDeleteLink = async (id) => {
-    const token = await getToken({ template: "supabase" });
-    const supabase = getSupabaseClient(token);
-
     const { error } = await supabase.from("links").delete().eq("id", id);
     if (!error) setLinks(links.filter((link) => link.id !== id));
   };
@@ -160,12 +151,9 @@ export default function Dashboard() {
     setHasUnsavedLinks(true);
   };
 
-  // 6. Save Link Order with Security Badge
+  // 6. Save Link Order
   const handleSaveLinkOrder = async () => {
     setIsSavingLinks(true);
-    const token = await getToken({ template: "supabase" });
-    const supabase = getSupabaseClient(token);
-
     try {
       const updatePromises = links.map((item, index) =>
         supabase.from("links").update({ sort_order: index }).eq("id", item.id),
